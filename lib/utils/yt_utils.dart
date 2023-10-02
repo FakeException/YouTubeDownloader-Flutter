@@ -5,10 +5,7 @@ bool checkIfYouTubeURL(String url) {
     // Check if the host is youtube.com or youtu.be
     if (uri.host == 'www.youtube.com' || uri.host == 'youtu.be') {
       // Check if the path contains 'watch' and 'v' parameter
-      if (uri.pathSegments.contains('watch') &&
-          uri.queryParameters.containsKey('v')) {
         return true;
-      }
     }
   } catch (_) {
     // Parsing error, not a valid URL
@@ -18,22 +15,22 @@ bool checkIfYouTubeURL(String url) {
   return false;
 }
 
-String convertToYouTubeURL(String url) {
-  try {
-    Uri uri = Uri.parse(url);
+String convertToYouTubeURL(String shortURL) {
+  // Check if the URL starts with "https://youtu.be/"
+  if (shortURL.startsWith("https://youtu.be/")) {
+    // Split the URL at the '/' character to get the video ID
+    List<String> parts = shortURL.split("/");
+    if (parts.length > 3) {
+      // Extract the video ID from the URL
+      String videoID = parts[3].split("?")[0];
 
-    // Check if the host is youtu.be
-    if (uri.host == 'youtu.be') {
-      // Get the video ID from the path
-      String videoId = uri.pathSegments.first;
+      // Create the full YouTube URL
+      String fullURL = "https://www.youtube.com/watch?v=$videoID";
 
-      String convertedURL = 'https://www.youtube.com/watch?v=$videoId';
-
-      return convertedURL;
+      return fullURL;
     }
-  } catch (_) {
-
   }
 
-  return url;
+  // If the input URL is not in the expected format, return it unchanged
+  return shortURL;
 }
