@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:ffmpeg_helper/ffmpeg/args/custom_arg.dart';
-import 'package:ffmpeg_helper/ffmpeg/exporter.dart';
 import 'package:ffmpeg_helper/helpers/ffmpeg_helper_class.dart';
 import 'package:ffmpeg_helper/helpers/helper_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:material_dialogs/dialogs.dart';
 import 'package:material_dialogs/widgets/buttons/icon_button.dart';
+import 'package:youtube_downloader/utils/ffmpeg_utils.dart';
 import 'package:youtube_downloader/utils/yt_utils.dart';
 import 'package:youtube_downloader/widgets/drawer.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
@@ -121,7 +120,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
         '${now.year}${now.month}${now.day}_${now.hour}${now.minute}${now.second}';
 
     var videoFilePath = "$filePath/video_$formattedDate.mp4";
-    var audioFilePath = "$filePath/audio_$formattedDate.mp3";
+    var audioFilePath = "$filePath/audio_$formattedDate.wav";
 
     var videoInfo = manifest.videoOnly.withHighestBitrate();
     var audioInfo = manifest.audioOnly.withHighestBitrate();
@@ -156,37 +155,22 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
         final downloadPath = await getDownloadPath();
         finalPath = '$downloadPath/$formattedDate.mp4';
 
-        ffmpeg.runAsync(
-            FFMpegCommand(
-              inputs: [
-                FFMpegInput.asset(videoFilePath),
-                FFMpegInput.asset(audioFilePath)
-              ],
-              args: [
-                const CustomArgument(["-c:v", "copy"]),
-                const CustomArgument(["-c:a", "aac"]),
-                const CustomArgument(["-strict", "experimental"]),
-              ],
-              outputFilepath: finalPath,
-            ), onComplete: (file) {
-          setState(() {
-            finished = true;
-            status = "Complete";
-          });
-        });
+        mergeVideoAndAudio(
+            ffmpeg,
+            videoFilePath,
+            audioFilePath,
+            finalPath,
+            (p0) => {
+                  setState(() {
+                    finished = true;
+                    status = "Complete";
+                  })
+                });
       }
     }
 
     var videoStream = yt.videos.streamsClient.get(videoInfo);
     var audioStream = yt.videos.streamsClient.get(audioInfo);
-
-    videoFileStream.done.then((_) {
-      checkDownloadCompletion();
-    });
-
-    audioFileStream.done.then((_) {
-      checkDownloadCompletion();
-    });
 
     videoDownloadSubscription = videoStream.listen(
       (data) {
@@ -241,15 +225,21 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
 
     final downloadPath = await getDownloadPath();
 
+    final tempDir = await getTemporaryDirectory();
+    var filePath = "${tempDir.path}/youtube_downloader";
+    var dir = Directory(filePath);
+
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+
     StreamManifest manifest = await yt.videos.streamsClient.getManifest(link);
 
     final now = DateTime.now();
     formattedDate =
         '${now.year}${now.month}${now.day}_${now.hour}${now.minute}${now.second}';
 
-    finalPath = '$downloadPath/$formattedDate.mp3';
-
-    var audioFilePath = finalPath;
+    var audioFilePath = '$filePath/$formattedDate.wav';
 
     var audioInfo = manifest.audioOnly.withHighestBitrate();
 
@@ -261,27 +251,31 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
 
     var audioFileStream = audioFile.openWrite();
 
-    Future<void> closeStreams() async {
-      await audioFileStream.close();
-    }
-
     Future<void> checkDownloadCompletion() async {
       if (downloadedAudioBytes >= totalAudioBytes) {
-        closeStreams();
+        audioFileStream.close();
 
         setState(() {
-          finished = true;
+          status = "Converting file...";
           downloading = false;
-          status = "Complete";
         });
+
+        finalPath = '$downloadPath/$formattedDate.mp3';
+
+        wavToMp3(
+            ffmpeg,
+            audioFilePath,
+            finalPath,
+            (p0) => {
+                  setState(() {
+                    finished = true;
+                    status = "Complete";
+                  })
+                });
       }
     }
 
     var audioStream = yt.videos.streamsClient.get(audioInfo);
-
-    audioFileStream.done.then((_) {
-      checkDownloadCompletion();
-    });
 
     audioDownloadSubscription = audioStream.listen(
       (data) {
