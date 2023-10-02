@@ -8,17 +8,21 @@ import 'package:ffmpeg_helper/helpers/helper_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:material_dialogs/dialogs.dart';
 import 'package:material_dialogs/widgets/buttons/icon_button.dart';
+import 'package:youtube_downloader/utils/yt_utils.dart';
+import 'package:youtube_downloader/widgets/drawer.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:path_provider/path_provider.dart';
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await FFMpegHelper.instance.initialize();
   runApp(const YoutubeDownloader());
 }
 
 class YoutubeDownloader extends StatelessWidget {
-  const YoutubeDownloader({Key? key}) : super(key: key);
+  const YoutubeDownloader({
+    Key? key,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +31,10 @@ class YoutubeDownloader extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
         useMaterial3: true,
       ),
       home: const MyHomePage(title: 'YouTube Downloader'),
@@ -52,6 +60,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   bool downloading = false;
   bool started = false;
   bool finished = true;
+  bool isNotValid = false;
   String formattedDate = "";
 
   StreamSubscription? videoDownloadSubscription;
@@ -80,7 +89,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
 
   Future<void> deleteTempFolder() async {
     final tempDir = await getTemporaryDirectory();
-    const folderName = 'youtube_downloader'; // Replace with your folder name
+    const folderName = 'youtube_downloader';
     final folderPath = '${tempDir.path}/$folderName';
     final folder = Directory(folderPath);
 
@@ -412,110 +421,159 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Visibility(
-              visible: Platform.isWindows ? ffmpegPresent : true,
-              child: Padding(
-                padding: const EdgeInsets.all(14.0),
-                child: TextField(
-                  controller: linkController,
-                  decoration: const InputDecoration(
-                      labelText: "Video Link",
-                      hintText: "YouTube Video URL",
-                      border: OutlineInputBorder()),
+      drawer: const YouTubeDrawer(),
+      body: SingleChildScrollView(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              const Padding(
+                padding: EdgeInsets.only(left: 5, right: 5, top: 25),
+                child: Text(
+                  "Welcome to YouTube Downloader!",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 25, fontWeight: FontWeight.w500),
                 ),
               ),
-            ),
-            SizedBox(
-              width: 300,
-              child: ValueListenableBuilder(
-                valueListenable: downloadProgress,
-                builder: (BuildContext context, FFMpegProgress value, _) {
-                  double? prog;
-                  if ((value.downloaded != 0) && (value.fileSize != 0)) {
-                    prog = value.downloaded / value.fileSize;
-                  } else {
-                    prog = 0;
-                  }
-                  if (value.phase == FFMpegProgressPhase.decompressing) {
-                    prog = null;
-                  }
-                  if (value.phase == FFMpegProgressPhase.inactive) {
-                    return const SizedBox.shrink();
-                  }
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text("Installing ffmpeg..."),
-                      const SizedBox(height: 5),
-                      LinearProgressIndicator(value: prog),
-                    ],
-                  );
-                },
-              ),
-            ),
-            Visibility(
-              visible: Platform.isWindows
-                  ? ffmpegPresent && !downloading && finished
-                  : !downloading && finished,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: ElevatedButton(
-                  onPressed: () => downloadVideoWithAudio(linkController.text),
-                  child: const Text("Download Video"),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10.0),
+                child: Text(
+                  "Paste your YouTube link below for downloading it",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w300),
                 ),
               ),
-            ),
-            Visibility(
-              visible: Platform.isWindows
-                  ? ffmpegPresent && !downloading && finished
-                  : !downloading && finished,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: ElevatedButton(
-                  onPressed: () => downloadAudio(linkController.text),
-                  child: const Text("Download Only Audio"),
-                ),
-              ),
-            ),
-            Visibility(
-              visible: downloading,
-              child: ElevatedButton(
-                onPressed: () => cancelDownload(),
-                child: const Text("Stop Downloading"),
-              ),
-            ),
-            Text(status),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Visibility(
-                visible: finished && started,
-                child: Center(child: Text("Saved to: $finalPath")),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    value: progress,
+              Visibility(
+                visible: Platform.isWindows ? ffmpegPresent : true,
+                child: Padding(
+                  padding: const EdgeInsets.all(14.0),
+                  child: TextField(
+                    controller: linkController,
+                    decoration: InputDecoration(
+                        labelText: "Video Link",
+                        hintText: "YouTube Video URL",
+                        errorText: isNotValid
+                            ? "Please enter a valid YouTube link"
+                            : null,
+                        border: const OutlineInputBorder()),
                   ),
-                  Visibility(
-                    visible: progress == 1,
-                    child: const Icon(
-                      Icons.check,
-                      size: 32,
-                      color: Colors.deepPurpleAccent,
+                ),
+              ),
+              SizedBox(
+                width: 300,
+                child: ValueListenableBuilder(
+                  valueListenable: downloadProgress,
+                  builder: (BuildContext context, FFMpegProgress value, _) {
+                    double? prog;
+                    if ((value.downloaded != 0) && (value.fileSize != 0)) {
+                      prog = value.downloaded / value.fileSize;
+                    } else {
+                      prog = 0;
+                    }
+                    if (value.phase == FFMpegProgressPhase.decompressing) {
+                      prog = null;
+                    }
+                    if (value.phase == FFMpegProgressPhase.inactive) {
+                      return const SizedBox.shrink();
+                    }
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text("Installing ffmpeg..."),
+                        const SizedBox(height: 5),
+                        LinearProgressIndicator(value: prog),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              Visibility(
+                visible: Platform.isWindows
+                    ? ffmpegPresent && !downloading && finished
+                    : !downloading && finished,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        if (linkController.text.isEmpty ||
+                            !checkIfYouTubeURL(linkController.text)) {
+                          isNotValid = true;
+                        } else {
+                          isNotValid = false;
+                          String link =
+                              convertToYouTubeURL(linkController.text);
+                          downloadVideoWithAudio(link);
+                        }
+                      });
+                    },
+                    child: const Text("Download Video"),
+                  ),
+                ),
+              ),
+              Visibility(
+                visible: Platform.isWindows
+                    ? ffmpegPresent && !downloading && finished
+                    : !downloading && finished,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        if (linkController.text.isEmpty ||
+                            !checkIfYouTubeURL(linkController.text)) {
+                          isNotValid = true;
+                        } else {
+                          isNotValid = false;
+                          String link =
+                              convertToYouTubeURL(linkController.text);
+                          downloadAudio(link);
+                        }
+                      });
+                    },
+                    child: const Text("Download Only Audio"),
+                  ),
+                ),
+              ),
+              Visibility(
+                visible: downloading,
+                child: ElevatedButton(
+                  onPressed: () => cancelDownload(),
+                  child: const Text("Stop Downloading"),
+                ),
+              ),
+              Text(status),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Visibility(
+                  visible: finished && started,
+                  child: Center(
+                      child: Text(
+                    "Saved to: $finalPath",
+                    textAlign: TextAlign.center,
+                  )),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      value: progress,
                     ),
-                  ),
-                ],
+                    Visibility(
+                      visible: progress == 1,
+                      child: const Icon(
+                        Icons.check,
+                        size: 32,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
